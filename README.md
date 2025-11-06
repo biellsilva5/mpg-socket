@@ -19,6 +19,18 @@ Servidor WebSocket robusto construído com Socket.IO e Node.js, com suporte a CO
 - Node.js 20+ (ou Docker)
 - pnpm 10.20.0+
 
+## 🏥 Health Check
+
+O servidor expõe uma rota HTTP `/health` que retorna o status do servidor:
+
+```bash
+# Verificar saúde do servidor
+curl http://localhost:3000/health
+
+# Resposta:
+# {"status":"ok","timestamp":"2025-11-06T...","connections":0}
+```
+
 ## 🔧 Instalação
 
 ### Instalação Local
@@ -180,7 +192,7 @@ services:
       - CORS_ORIGIN=*
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
       timeout: 3s
       retries: 3

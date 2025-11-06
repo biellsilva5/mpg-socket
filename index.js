@@ -5,8 +5,20 @@ import { Server } from 'socket.io';
 const PORT = process.env.PORT || 3000;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 
-// Criar servidor HTTP
-const httpServer = createServer();
+// Criar servidor HTTP com rota de health check
+const httpServer = createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      status: 'ok', 
+      timestamp: new Date().toISOString(),
+      connections: io.engine ? io.engine.clientsCount : 0
+    }));
+  } else {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+  }
+});
 
 // Criar servidor Socket.IO com configuração de CORS
 const io = new Server(httpServer, {

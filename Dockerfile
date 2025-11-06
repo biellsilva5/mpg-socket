@@ -23,7 +23,7 @@ ENV PORT=3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {let data='';r.on('data',c=>data+=c);r.on('end',()=>{try{const j=JSON.parse(data);process.exit(j.status==='ok'?0:1)}catch(e){process.exit(1)}})},(e)=>process.exit(1))"
 
 # Comando para iniciar a aplicação
 CMD ["pnpm", "start"]
