@@ -9,34 +9,10 @@ yarn-error.log
 .env.local
 .env.*.local
 
-
-# IDE
-.vscode
-.idea
-*.swp
-*.swo
-*~
-
 # Sistema Operacional
 .DS_Store
 Thumbs.db
 
-# Testes
-coverage
-.nyc_output
-*.test.js
-*.spec.js
 
-# Documentação
-README.md
-docs
 
-# CI/CD
-.github
-.gitlab-ci.yml
-
-# Docker
-Dockerfile
-.dockerignore
-docker-compose.yml
 
