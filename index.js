@@ -5,8 +5,21 @@ import { Server } from 'socket.io';
 const PORT = process.env.PORT || 3000;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 
-// Criar servidor HTTP com rota de health check
+// Criar servidor HTTP com rotas
 const httpServer = createServer((req, res) => {
+  // Configurar CORS para todas as rotas
+  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Tratar OPTIONS para CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+
+  // Rota de health check
   if (req.url === '/health' || req.url === '/') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ 
@@ -14,7 +27,58 @@ const httpServer = createServer((req, res) => {
       timestamp: new Date().toISOString(),
       connections: io.engine ? io.engine.clientsCount : 0
     }));
-  } else {
+  } 
+  // Rota /events para receber webhooks e encaminhar para WebSocket
+  else if (req.url === '/events' && req.method === 'POST') {
+    let body = '';
+    
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        
+        // Validar campos obrigatórios
+        if (!data.instance || !data.event || !data.data) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ 
+            error: 'Campos obrigatórios: instance, event, data' 
+          }));
+          return;
+        }
+
+        const instance = data.instance;
+        const eventName = data.event;
+        const eventData = data.data;
+
+        // Enviar para a sala (room) específica da instância
+        // Isso garante que apenas clientes conectados nesta instância recebam a mensagem
+        io.to(instance).emit(eventName, eventData);
+
+        console.log(`📤 Evento "${eventName}" enviado para instância "${instance}"`);
+        console.log(`📊 Clientes na sala "${instance}":`, io.sockets.adapter.rooms.get(instance)?.size || 0);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ 
+          success: true,
+          message: 'Evento enviado com sucesso',
+          instance: instance,
+          event: eventName,
+          timestamp: new Date().toISOString()
+        }));
+      } catch (error) {
+        console.error('❌ Erro ao processar evento:', error);
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ 
+          error: 'Erro ao processar JSON',
+          details: error.message
+        }));
+      }
+    });
+  } 
+  else {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));
   }
@@ -45,11 +109,56 @@ io.on('connection', (socket) => {
   console.log(`✅ Cliente conectado: ${socket.id}`);
   console.log(`📊 Total de clientes conectados: ${io.engine.clientsCount}`);
 
-  // Enviar mensagem de boas-vindas
-  socket.emit('welcome', {
-    message: 'Bem-vindo ao servidor WebSocket!',
-    socketId: socket.id,
-    timestamp: new Date().toISOString()
+  // Capturar a instância do query parameter ou auth
+  const instance = socket.handshake.query.instance || socket.handshake.auth?.instance;
+
+  if (instance) {
+    // Entrar na sala (room) específica da instância
+    socket.join(instance);
+    console.log(`🔗 Cliente ${socket.id} entrou na instância: ${instance}`);
+    console.log(`📊 Clientes na sala "${instance}":`, io.sockets.adapter.rooms.get(instance)?.size || 0);
+
+    // Enviar mensagem de boas-vindas com informação da instância
+    socket.emit('welcome', {
+      message: 'Bem-vindo ao servidor WebSocket!',
+      socketId: socket.id,
+      instance: instance,
+      timestamp: new Date().toISOString()
+    });
+  } else {
+    // Se não especificar instância, enviar mensagem genérica
+    console.log(`⚠️ Cliente ${socket.id} conectado sem instância`);
+    socket.emit('welcome', {
+      message: 'Bem-vindo ao servidor WebSocket!',
+      socketId: socket.id,
+      warning: 'Nenhuma instância especificada. Use query parameter ?instance=SEU_NUMERO',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Evento para trocar de instância
+  socket.on('join-instance', (newInstance) => {
+    if (!newInstance) {
+      socket.emit('error', { message: 'Instância não especificada' });
+      return;
+    }
+
+    // Sair de todas as salas atuais (exceto a sala do próprio socket)
+    const currentRooms = Array.from(socket.rooms).filter(room => room !== socket.id);
+    currentRooms.forEach(room => {
+      socket.leave(room);
+      console.log(`🚪 Cliente ${socket.id} saiu da instância: ${room}`);
+    });
+
+    // Entrar na nova instância
+    socket.join(newInstance);
+    console.log(`🔗 Cliente ${socket.id} entrou na instância: ${newInstance}`);
+    console.log(`📊 Clientes na sala "${newInstance}":`, io.sockets.adapter.rooms.get(newInstance)?.size || 0);
+
+    socket.emit('instance-changed', {
+      instance: newInstance,
+      timestamp: new Date().toISOString()
+    });
   });
 
   // Exemplo: Escutar evento 'message' do cliente
