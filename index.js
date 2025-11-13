@@ -28,6 +28,7 @@ const httpServer = createServer((req, res) => {
       connections: io.engine ? io.engine.clientsCount : 0
     }));
   } 
+
   // Rota /events para receber webhooks e encaminhar para WebSocket
   else if (req.url === '/events' && req.method === 'POST') {
     let body = '';
@@ -54,7 +55,6 @@ const httpServer = createServer((req, res) => {
         const eventData = data.data;
 
         // Enviar para a sala (room) específica da instância
-        // Isso garante que apenas clientes conectados nesta instância recebam a mensagem
         io.to(instance).emit(eventName, eventData);
 
         console.log(`📤 Evento "${eventName}" enviado para instância "${instance}"`);
@@ -112,77 +112,22 @@ io.on('connection', (socket) => {
   // Capturar a instância do query parameter ou auth
   const instance = socket.handshake.query.instance || socket.handshake.auth?.instance;
 
-  if (instance) {
-    // Entrar na sala (room) específica da instância
-    socket.join(instance);
-    console.log(`🔗 Cliente ${socket.id} entrou na instância: ${instance}`);
-    console.log(`📊 Clientes na sala "${instance}":`, io.sockets.adapter.rooms.get(instance)?.size || 0);
-
-    // Enviar mensagem de boas-vindas com informação da instância
-    socket.emit('welcome', {
-      message: 'Bem-vindo ao servidor WebSocket!',
-      socketId: socket.id,
-      instance: instance,
-      timestamp: new Date().toISOString()
-    });
-  } else {
-    // Se não especificar instância, enviar mensagem genérica
-    console.log(`⚠️ Cliente ${socket.id} conectado sem instância`);
-    socket.emit('welcome', {
-      message: 'Bem-vindo ao servidor WebSocket!',
-      socketId: socket.id,
-      warning: 'Nenhuma instância especificada. Use query parameter ?instance=SEU_NUMERO',
-      timestamp: new Date().toISOString()
-    });
+  if (!instance || instance === '') {
+    socket.emit('error', { message: 'Instância não especificada' });
+    return;
   }
 
-  // Evento para trocar de instância
-  socket.on('join-instance', (newInstance) => {
-    if (!newInstance) {
-      socket.emit('error', { message: 'Instância não especificada' });
-      return;
-    }
+  // Entrar na sala (room) específica da instância
+  socket.join(instance);
+  console.log(`🔗 Cliente ${socket.id} entrou na instância: ${instance}`);
+  console.log(`📊 Clientes na sala "${instance}":`, io.sockets.adapter.rooms.get(instance)?.size || 0);
 
-    // Sair de todas as salas atuais (exceto a sala do próprio socket)
-    const currentRooms = Array.from(socket.rooms).filter(room => room !== socket.id);
-    currentRooms.forEach(room => {
-      socket.leave(room);
-      console.log(`🚪 Cliente ${socket.id} saiu da instância: ${room}`);
-    });
-
-    // Entrar na nova instância
-    socket.join(newInstance);
-    console.log(`🔗 Cliente ${socket.id} entrou na instância: ${newInstance}`);
-    console.log(`📊 Clientes na sala "${newInstance}":`, io.sockets.adapter.rooms.get(newInstance)?.size || 0);
-
-    socket.emit('instance-changed', {
-      instance: newInstance,
-      timestamp: new Date().toISOString()
-    });
-  });
-
-  // Exemplo: Escutar evento 'message' do cliente
-  socket.on('message', (data) => {
-    console.log(`📨 Mensagem recebida de ${socket.id}:`, data);
-    
-    // Enviar mensagem de volta para o cliente
-    socket.emit('message-response', {
-      original: data,
-      response: 'Mensagem recebida com sucesso!',
-      timestamp: new Date().toISOString()
-    });
-  });
-
-  // Exemplo: Broadcast para todos os clientes
-  socket.on('broadcast', (data) => {
-    console.log(`📢 Broadcast de ${socket.id}:`, data);
-    
-    // Enviar para todos os clientes, exceto o remetente
-    socket.broadcast.emit('broadcast-message', {
-      from: socket.id,
-      data: data,
-      timestamp: new Date().toISOString()
-    });
+  // Enviar mensagem de boas-vindas com informação da instância
+  socket.emit('welcome', {
+    message: 'Bem-vindo ao servidor WebSocket!',
+    socketId: socket.id,
+    instance: instance,
+    timestamp: new Date().toISOString()
   });
 
   // Evento de desconexão
@@ -196,6 +141,7 @@ io.on('connection', (socket) => {
   socket.on('error', (error) => {
     console.error(`⚠️ Erro no socket ${socket.id}:`, error);
   });
+  
 });
 
 // Iniciar servidor
